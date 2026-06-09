@@ -1,0 +1,61 @@
+vtysh -c 'configure terminal
+! --- UNDERLAY (OSPF) ---
+! La Loopback sert d identifiant unique et stable pour le routeur
+interface lo
+ ip address 1.1.1.1/32
+exit
+
+! Configuration des liens physiques vers les 3 VTEPs (Leafs)
+! Le mode point-to-point accelere OSPF en evitant l election d un DR
+interface eth0
+ ip address 10.1.1.1/30
+ ip ospf network point-to-point
+exit
+interface eth1
+ ip address 10.1.1.5/30
+ ip ospf network point-to-point
+exit
+interface eth2
+ ip address 10.1.1.9/30
+ ip ospf network point-to-point
+exit
+
+! Activation du routage OSPF sur l Area 0 (Backbone)
+! On annonce la loopback et les reseaux d interconnexion
+router ospf
+ network 1.1.1.1/32 area 0
+ network 10.1.1.0/30 area 0
+ network 10.1.1.4/30 area 0
+ network 10.1.1.8/30 area 0
+exit
+
+! --- OVERLAY (BGP EVPN) ---
+! Utilisation de l AS 1 comme demande dans le sujet
+router bgp 1
+ bgp router-id 1.1.1.1
+ 
+ ! Definition des voisins BGP (les 3 Leafs)
+ ! La session s etablit via les Loopbacks pour une stabilite maximale
+ neighbor 1.1.1.2 remote-as 1
+ neighbor 1.1.1.2 update-source lo
+ neighbor 1.1.1.3 remote-as 1
+ neighbor 1.1.1.3 update-source lo
+ neighbor 1.1.1.4 remote-as 1
+ neighbor 1.1.1.4 update-source lo
+ 
+ ! Famille EVPN : pour transporter les adresses MAC des hotes
+ address-family l2vpn evpn
+  ! Activation de la decouverte avec chaque voisin
+  neighbor 1.1.1.2 activate
+  neighbor 1.1.1.3 activate
+  neighbor 1.1.1.4 activate
+  
+  ! ROLE MAJEUR : Ce routeur est le Route Reflector
+  ! Il centralise les routes MAC et les redistribue aux autres Leafs
+  neighbor 1.1.1.2 route-reflector-client
+  neighbor 1.1.1.3 route-reflector-client
+  neighbor 1.1.1.4 route-reflector-client
+ exit-address-family
+exit
+end
+write memory'
